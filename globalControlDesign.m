@@ -51,6 +51,21 @@ for i = 1:numOfDGs
     H = blkdiag(H, H_i);
 end
 
+%this is debugging
+fprintf('Debugging DG structure:\n');
+for i = 1:numOfDGs
+    fprintf('DG{%d} fields: ', i);
+    disp(fieldnames(DG{i}));
+    
+    if isfield(DG{i}, 'gammaTilde0')
+        fprintf('DG{%d}.gammaTilde0 = %f\n', i, DG{i}.gammaTilde0);
+    else
+        error('ERROR: DG{%d}.gammaTilde0 does not exist!', i);
+    end
+end
+
+
+
 % GammaMat
 GammaMat = [];
 for i = 1:numOfDGs
