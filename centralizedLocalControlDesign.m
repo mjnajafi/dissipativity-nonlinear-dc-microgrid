@@ -48,15 +48,7 @@ for i = 1:1:numOfDGs
     Cti = DG{i}.C;       % Capacitance
     Vmin = 0.95 * DG{i}.refVoltage;  % 5% below nominal
     Vmax = 1.05 * DG{i}.refVoltage;  % 5% above nominal
-    
-    % Calculate sector bounds α_i and β_i
-    if PL_i <= 0
-        alpha_i = 0;  % No CPL
-        beta_i = 0;
-    else
-        alpha_i = PL_i / (Cti * Vmax^2);
-        beta_i = PL_i / (Cti * Vmin^2);
-    end
+   
     
     % Basic positivity constraints
     tagName = ['P_tilde_',num2str(i),'_positive'];
@@ -71,20 +63,20 @@ for i = 1:1:numOfDGs
     
     tagName = ['lambda_tilde_',num2str(i),'_bound'];
     constraintTags{end+1} = tagName;
-    con3 = tag(lambda_tilde_i{i} >= 1 + epsilon, tagName); % λ̃_i > 1 from Theorem 4
+    con3 = tag(lambda_tilde_i{i} >= 1, tagName); % λ̃_i > 1 from Theorem 4
     constraintMats{end+1} = lambda_tilde_i{i};
 
     % Passivity constraints
-    tagName = ['nu_',num2str(i),'_bound'];
-    constraintTags{end+1} = tagName;
-    con_nu = tag(nu_i{i} <= 0, tagName);  % Passivity index constraint
-    constraintMats{end+1} = nu_i{i};
-    
-    tagName = ['rho_tilde_',num2str(i),'_positive'];
-    constraintTags{end+1} = tagName;
-    con_rho = tag(rho_tilde_i{i} >= epsilon, tagName);  % Positive definite
-    constraintMats{end+1} = rho_tilde_i{i};
-    
+    % tagName = ['nu_',num2str(i),'_bound'];
+    % constraintTags{end+1} = tagName;
+    % con_nu = tag(nu_i{i} <= 0, tagName);  % Passivity index constraint
+    % constraintMats{end+1} = nu_i{i};
+    % 
+    % tagName = ['rho_tilde_',num2str(i),'_positive'];
+    % constraintTags{end+1} = tagName;
+    % con_rho = tag(rho_tilde_i{i} >= epsilon, tagName);  % Positive definite
+    % constraintMats{end+1} = rho_tilde_i{i};
+    % 
     % Gamma constraints (from Lemma 9 - includes BarGamma bound)
     tagName = ['gamma_tilde_',num2str(i),'_low'];
     constraintTags{end+1} = tagName;
@@ -220,7 +212,7 @@ for i = 1:1:numOfDGs
     
     % Add all DG constraints
     % constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con4, con5];
-    constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con4];
+    constraints = [constraints, con0_1, con0_2, con1, con2, con3];
 
 end
 
@@ -370,18 +362,18 @@ costGamma = 0;
 alpha_lambda = 1;  % Weight for lambda terms
 
 % Minimize λ̃_i terms (primary objective from Theorem 4)
-for i = 1:numOfDGs
-    costGamma = costGamma + alpha_lambda * lambda_tilde_i{i};
-end
+% for i = 1:numOfDGs
+%     costGamma = costGamma + alpha_lambda * lambda_tilde_i{i};
+% end
 
 % Additional regularization terms
 for i = 1:numOfDGs
     costGamma = costGamma + 0.1*rho_tilde_i{i} + 100*gamma_tilde_i{i} + 0.01*trace(P_tilde_i{i}) + 0.01*trace(R_tilde_i{i});
 end
 
-for l = 1:numOfLines
-    costGamma = costGamma + 0.1*rho_bar_l{l} + 0.01*trace(P_bar_l{l});
-end
+% for l = 1:numOfLines
+%     costGamma = costGamma + 0.1*rho_bar_l{l} + 0.01*trace(P_bar_l{l});
+% end
 
 %% Solve the LMI problem
 solverOptions = sdpsettings('solver', 'mosek', 'verbose', 2, 'debug', debugMode, ...
