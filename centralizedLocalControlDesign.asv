@@ -58,6 +58,9 @@ for i = 1:1:numOfDGs
         beta_i = PL_i / (Cti * Vmin^2);
     end
     
+    % Ti matrix that extracts voltage component (first element)
+    Ti = [1; 0; 0];  % Column vector
+    
     % Basic positivity constraints
     tagName = ['P_tilde_',num2str(i),'_positive'];
     constraintTags{end+1} = tagName;
@@ -141,77 +144,42 @@ for i = 1:1:numOfDGs
     con4 = tag(W1_i >= epsilon*eye(size(W1_i)), tagName);
     constraintMats{end+1} = W1_i;
     
-    
     % SECOND CONSTRAINT from Theorem 4 (S-procedure for CPL sector boundedness)
-    % All parts are 6×6 matrices based on your dimension analysis
-
-    % Ti matrix setup
-    Ti = [1; 0; 0];  % 3×1 column vector
-
+    % This implements the exact constraint from Lemma 8 (equation 96)
+    
     % Theta matrix components (from equation 95 in the paper)
     Theta_11 = -alpha_i * beta_i;
     Theta_12 = (alpha_i + beta_i)/2;
     Theta_21 = Theta_12;  % Symmetric
     Theta_22 = -1;
-
-    % FIRST PART: [3×3, 3×1, 3×2; 3×3, 3×1, 3×2] → 6×6 matrix
-    % Block structure: [I 0 0; 0 P̃_iTi 0]
-    % Note: P̃_i = P_i^(-1), so P̃_iTi represents P_i^(-1) * Ti
-    Pi_Ti_product = P_tilde_i{i} * Ti;  % This is 3×3 * 3×1 = 3×1
     
-    % To match your dimension spec [3×3, 3×1, 3×2; 3×3, 3×1, 3×2], we need:
-    % Row 1: [3×3, 3×1, 3×2] and Row 2: [3×3, 3×1, 3×2]
-    % But the block [0, P̃_iTi, 0] means the P̃_iTi should be in the (4,4) position as 3×1
+    % Build the 5x5 matrix following equation (96) from Lemma 8
+    % First part: [I 0 0; 0 P̃_i*Ti 0]
+    First_Part = [eye(3), zeros(3,1), zeros(3,1);
+              zeros(1,3), P_tilde_i{i}(1,1)*Ti(1), 0];
     
-    First_Part = [eye(3),        zeros(3,1),     zeros(3,2);      % Row 1: [I₃ₓ₃, 0₃ₓ₁, 0₃ₓ₂]
-                  zeros(3,3),    Pi_Ti_product,  zeros(3,2)];     % Row 2: [0₃ₓ₃, P̃_iTi₃ₓ₁, 0₃ₓ₂]
-    % Result: 6×6 matrix
+    % Second part: [I 0; 0 Ti'*P̃_i; 0 0]  
+    Second_Part = [eye(3),                   zeros(3,1),                   zeros(3,1);
+                   Ti(1)*[P_tilde_i{i}(1,1), 0, 0], 0,                    0;
+                   zeros(1,3),               0,                            0];
     
-    % SECOND PART: [3×3, 3×3; 1×3, 1×3; 2×3, 2×3] → 6×6 matrix  
-    % Block structure: [I 0; 0 Ti'P̃_i; 0 0]
-    Ti_transpose_Pi = Ti' * P_tilde_i{i};  % 1×3 result
+    % Third part: [R̃_i 0; 0 I]
+    Third_Part = [R_tilde_i{i},              zeros(3,2);
+                  zeros(2,3),                eye(2)];
     
-    Second_Part = [eye(3),       zeros(3,3);                      % Row 1: [I₃ₓ₃, 0₃ₓ₃]
-                   zeros(1,3),   Ti_transpose_Pi;                  % Row 2: [0₁ₓ₃, Ti'P̃_i₁ₓ₃]
-                   zeros(2,3),   zeros(2,3)];                     % Row 3: [0₂ₓ₃, 0₂ₓ₃]
-    % Result: 6×6 matrix
+    % Fourth part: λ̃_i * [Θ11 Θ12P̃_i + λ̃_iI; P̃_iΘ21 + λ̃_iI 0]
+    % CORRECTED: Include P̃_i multiplication as per the constraint
+    Fourth_Part_11 = Theta_11 * eye(3);
+    Fourth_Part_12 = Theta_12 * P_tilde_i{i} * Ti + lambda_tilde_i{i} * [1; 0; 0];
+    Fourth_Part_21 = P_tilde_i{i} * Theta_21 * Ti' + lambda_tilde_i{i} * [1, 0, 0];
+    Fourth_Part_22 = 0;
     
-    % THIRD PART: [3×3, 3×3; 3×3, 3×3] → 6×6 matrix
-    % Block structure: [R̃_i 0; 0 I]
-    Third_Part = [R_tilde_i{i},  zeros(3,3);                      % Row 1: [R̃_i₃ₓ₃, 0₃ₓ₃]
-                  zeros(3,3),    eye(3)];                         % Row 2: [0₃ₓ₃, I₃ₓ₃]
-    % Result: 6×6 matrix
+    Fourth_Part = [Fourth_Part_11,           Fourth_Part_12,              zeros(3,1);
+                   Fourth_Part_21,           Fourth_Part_22,              0;
+                   zeros(1,3),               0,                           0];
     
-    % FOURTH PART: [3×3, 3×3; 3×3, 3×3] → 6×6 matrix
-    % From the paper's constraint: [Θ₁₁ Θ₁₂P̃_i + λ̃_iI; P̃_iΘ₂₁ + λ̃_iI 0]
-    % where Θ₁₁ = -α_iβ_i(T_iT_i^T), Θ₁₂ = (α_i+β_i)/2(T_iT_i^T), etc.
-    
-    % Calculate TiTi^T (this is 3×1 * 1×3 = 3×3)
-    TiTi_transpose = Ti * Ti';  % 3×3 matrix
-    
-    % Upper left 3×3 block: Θ₁₁ = -α_iβ_i(T_iT_i^T)
-    Fourth_Part_11 = Theta_11 * TiTi_transpose;  % 3×3 matrix
-    
-    % Upper right 3×3 block: Θ₁₂P̃_i + λ̃_iI
-    % Note: Θ₁₂ involves T_iT_i^T term, so Θ₁₂P̃_i = (α_i+β_i)/2 * T_iT_i^T * P̃_i
-    Fourth_Part_12 = Theta_12 * TiTi_transpose * P_tilde_i{i} + lambda_tilde_i{i} * eye(3);
-    
-    % Lower left 3×3 block: P̃_iΘ₂₁ + λ̃_iI  
-    % Note: Θ₂₁ = Θ₁₂^T, so P̃_iΘ₂₁ = P̃_i * (α_i+β_i)/2 * T_iT_i^T
-    Fourth_Part_21 = P_tilde_i{i} * Theta_21 * TiTi_transpose + lambda_tilde_i{i} * eye(3);
-    
-    % Lower right 3×3 block: 0
-    Fourth_Part_22 = zeros(3,3);
-    
-    % Construct the complete 6×6 Fourth_Part
-    Fourth_Part = [Fourth_Part_11, Fourth_Part_12;               % Row 1: [Θ₁₁₃ₓ₃, (Θ₁₂P̃_i + λ̃_iI)₃ₓ₃]
-                   Fourth_Part_21, Fourth_Part_22];              % Row 2: [(P̃_iΘ₂₁ + λ̃_iI)₃ₓ₃, 0₃ₓ₃]
-    % Result: 6×6 matrix
-    
-    % COMPLETE SECOND CONSTRAINT MATRIX (equation 96 from Lemma 8)
-    % All parts are now 6×6, so addition works correctly
+    % Complete second constraint matrix (equation 96 from Lemma 8)
     W2_i = First_Part + Second_Part - Third_Part - Fourth_Part;
-        
     
     tagName = ['W2_',num2str(i)];
     constraintTags{end+1} = tagName;
