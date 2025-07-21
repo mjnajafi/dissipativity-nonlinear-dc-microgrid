@@ -13,7 +13,6 @@ for i = 1:1:numOfDGs
     % Define controller gains separately to enforce [Kp, 0, Ki] structure
     Kp_i{i} = sdpvar(1, 1, 'full');           % Proportional gain
     Ki_i{i} = sdpvar(1, 1, 'full');           % Integral gain
-    K_tilde_i0{i} = [Kp_i{i}, 0, Ki_i{i}];   % This enforces [Kp, 0, Ki] structure
     
     R_tilde_i{i} = sdpvar(3, 3, 'symmetric'); % R̃_i in Theorem 4
     lambda_tilde_i{i} = sdpvar(1, 1, 'full'); % λ̃_i in Theorem 4
@@ -35,6 +34,8 @@ constraintMats = {};
 
 %% DG Constraints from Theorem 4
 for i = 1:1:numOfDGs
+    K_tilde_i0{i} = [Kp_i{i}, 0, Ki_i{i}];   % This enforces [Kp, 0, Ki] structure
+
     % Get system matrices
     Ai = DG{i}.A;
     Bi = DG{i}.B;
@@ -46,8 +47,8 @@ for i = 1:1:numOfDGs
     % CPL parameters for sector boundedness (from paper's Lemma 6)
     PL_i = DG{i}.PL;     % Constant Power Load value
     Cti = DG{i}.C;       % Capacitance
-    Vmin = 0.98 * DG{i}.refVoltage;  % 5% below nominal
-    Vmax = 1.02 * DG{i}.refVoltage;  % 5% above nominal
+    Vmin = 0.95 * DG{i}.refVoltage;  % 5% below nominal
+    Vmax = 1.05 * DG{i}.refVoltage;  % 5% above nominal
    
     
     % Basic positivity constraints
@@ -67,16 +68,16 @@ for i = 1:1:numOfDGs
     constraintMats{end+1} = lambda_tilde_i{i};
 
     % Passivity constraints
-    % tagName = ['nu_',num2str(i),'_bound'];
-    % constraintTags{end+1} = tagName;
-    % con_nu = tag(nu_i{i} <= 0, tagName);  % Passivity index constraint
-    % constraintMats{end+1} = nu_i{i};
-    % 
-    % tagName = ['rho_tilde_',num2str(i),'_positive'];
-    % constraintTags{end+1} = tagName;
-    % con_rho = tag(rho_tilde_i{i} >= epsilon, tagName);  % Positive definite
-    % constraintMats{end+1} = rho_tilde_i{i};
-    % 
+    tagName = ['nu_',num2str(i),'_bound'];
+    constraintTags{end+1} = tagName;
+    con_nu = tag(nu_i{i} <= 0, tagName);  % Passivity index constraint
+    constraintMats{end+1} = nu_i{i};
+
+    tagName = ['rho_tilde_',num2str(i),'_positive'];
+    constraintTags{end+1} = tagName;
+    con_rho = tag(rho_tilde_i{i} >= epsilon, tagName);  % Positive definite
+    constraintMats{end+1} = rho_tilde_i{i};
+    
     % Gamma constraints (from Lemma 9 - includes BarGamma bound)
     tagName = ['gamma_tilde_',num2str(i),'_low'];
     constraintTags{end+1} = tagName;
@@ -154,60 +155,60 @@ for i = 1:1:numOfDGs
     % Block structure: [I 0 0; 0 P̃_iTi 0]
     % Note: P̃_i = P_i^(-1), so P̃_iTi represents P_i^(-1) * Ti
     Pi_Ti_product = P_tilde_i{i} * Ti;  % This is 3×3 * 3×1 = 3×1
-    
+
     % To match your dimension spec [3×3, 3×1, 3×2; 3×3, 3×1, 3×2], we need:
     % Row 1: [3×3, 3×1, 3×2] and Row 2: [3×3, 3×1, 3×2]
     % But the block [0, P̃_iTi, 0] means the P̃_iTi should be in the (4,4) position as 3×1
-    
+
     First_Part = [eye(3),        zeros(3,1),     zeros(3,2);      % Row 1: [I₃ₓ₃, 0₃ₓ₁, 0₃ₓ₂]
                   zeros(3,3),    Pi_Ti_product,  zeros(3,2)];     % Row 2: [0₃ₓ₃, P̃_iTi₃ₓ₁, 0₃ₓ₂]
     % Result: 6×6 matrix
-    
+
     % SECOND PART: [3×3, 3×3; 1×3, 1×3; 2×3, 2×3] → 6×6 matrix  
     % Block structure: [I 0; 0 Ti'P̃_i; 0 0]
     Ti_transpose_Pi = Ti' * P_tilde_i{i};  % 1×3 result
-    
+
     Second_Part = [eye(3),       zeros(3,3);                      % Row 1: [I₃ₓ₃, 0₃ₓ₃]
                    zeros(1,3),   Ti_transpose_Pi;                  % Row 2: [0₁ₓ₃, Ti'P̃_i₁ₓ₃]
                    zeros(2,3),   zeros(2,3)];                     % Row 3: [0₂ₓ₃, 0₂ₓ₃]
     % Result: 6×6 matrix
-    
+
     % THIRD PART: [3×3, 3×3; 3×3, 3×3] → 6×6 matrix
     % Block structure: [R̃_i 0; 0 I]
     Third_Part = [R_tilde_i{i},  zeros(3,3);                      % Row 1: [R̃_i₃ₓ₃, 0₃ₓ₃]
                   zeros(3,3),    eye(3)];                         % Row 2: [0₃ₓ₃, I₃ₓ₃]
     % Result: 6×6 matrix
-    
+
     % FOURTH PART: [3×3, 3×3; 3×3, 3×3] → 6×6 matrix
     % From the paper's constraint: [Θ₁₁ Θ₁₂P̃_i + λ̃_iI; P̃_iΘ₂₁ + λ̃_iI 0]
     % where Θ₁₁ = -α_iβ_i(T_iT_i^T), Θ₁₂ = (α_i+β_i)/2(T_iT_i^T), etc.
-    
+
     % Calculate TiTi^T (this is 3×1 * 1×3 = 3×3)
     TiTi_transpose = Ti * Ti';  % 3×3 matrix
-    
+
     % Upper left 3×3 block: Θ₁₁ = -α_iβ_i(T_iT_i^T)
     Fourth_Part_11 = Theta_11 * TiTi_transpose;  % 3×3 matrix
-    
+
     % Upper right 3×3 block: Θ₁₂P̃_i + λ̃_iI
     % Note: Θ₁₂ involves T_iT_i^T term, so Θ₁₂P̃_i = (α_i+β_i)/2 * T_iT_i^T * P̃_i
     Fourth_Part_12 = Theta_12 * TiTi_transpose * P_tilde_i{i} + lambda_tilde_i{i} * eye(3);
-    
+
     % Lower left 3×3 block: P̃_iΘ₂₁ + λ̃_iI  
     % Note: Θ₂₁ = Θ₁₂^T, so P̃_iΘ₂₁ = P̃_i * (α_i+β_i)/2 * T_iT_i^T
     Fourth_Part_21 = P_tilde_i{i} * Theta_21 * TiTi_transpose + lambda_tilde_i{i} * eye(3);
-    
+
     % Lower right 3×3 block: 0
     Fourth_Part_22 = zeros(3,3);
-    
+
     % Construct the complete 6×6 Fourth_Part
     Fourth_Part = [Fourth_Part_11, Fourth_Part_12;               % Row 1: [Θ₁₁₃ₓ₃, (Θ₁₂P̃_i + λ̃_iI)₃ₓ₃]
                    Fourth_Part_21, Fourth_Part_22];              % Row 2: [(P̃_iΘ₂₁ + λ̃_iI)₃ₓ₃, 0₃ₓ₃]
     % Result: 6×6 matrix
-    
+
     % COMPLETE SECOND CONSTRAINT MATRIX (equation 96 from Lemma 8)
     % All parts are now 6×6, so addition works correctly
     W2_i = First_Part + Second_Part - Third_Part - Fourth_Part;
-        
+
     
     tagName = ['W2_',num2str(i)];
     constraintTags{end+1} = tagName;
@@ -215,8 +216,7 @@ for i = 1:1:numOfDGs
     constraintMats{end+1} = W2_i;
     
     % Add all DG constraints
-    % constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con4, con5];
-    constraints = [constraints, con0_1, con0_2, con1, con2, con3, con4, con5];
+    constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con4, con5];
 
 end
 
@@ -233,15 +233,15 @@ for l = 1:1:numOfLines
     constraintMats{end+1} = P_bar_l{l};
     
     % Line passivity constraints
-    % tagName = ['nu_bar_',num2str(l),'_bound'];
-    % constraintTags{end+1} = tagName;
-    % con_nu_l = tag(nu_bar_l{l} <= 0, tagName);  % Line passivity constraint
-    % constraintMats{end+1} = nu_bar_l{l};
-    % 
-    % tagName = ['rho_bar_',num2str(l),'_positive'];
-    % constraintTags{end+1} = tagName;
-    % con_rho_l = tag(rho_bar_l{l} >= epsilon, tagName);  % Positive definite
-    % constraintMats{end+1} = rho_bar_l{l};
+    tagName = ['nu_bar_',num2str(l),'_bound'];
+    constraintTags{end+1} = tagName;
+    con_nu_l = tag(nu_bar_l{l} <= 0, tagName);  % Line passivity constraint
+    constraintMats{end+1} = nu_bar_l{l};
+
+    tagName = ['rho_bar_',num2str(l),'_positive'];
+    constraintTags{end+1} = tagName;
+    con_rho_l = tag(rho_bar_l{l} >= epsilon, tagName);  % Positive definite
+    constraintMats{end+1} = rho_bar_l{l};
     
     % Main line LMI constraint (from Lemma 5)
     W_l = [(2*P_bar_l{l}*Rl)/Ll - rho_bar_l{l}, -P_bar_l{l}/Ll + 1/2;
@@ -252,8 +252,7 @@ for l = 1:1:numOfLines
     con7 = tag(W_l >= epsilon*eye(2), tagName);
     constraintMats{end+1} = W_l;
     
-    % constraints = [constraints, con6, con_nu_l, con_rho_l, con7];
-    constraints = [constraints, con6, con7];
+    constraints = [constraints, con6, con_nu_l, con_rho_l, con7];
 
 end
 
@@ -374,7 +373,7 @@ end
 
 % Additional regularization terms
 for i = 1:numOfDGs
-    costGamma = costGamma + 0.1*rho_tilde_i{i} + 100*gamma_tilde_i{i} + 0.01*trace(P_tilde_i{i}) + 0.01*trace(R_tilde_i{i});
+    costGamma = costGamma + 0.1*rho_tilde_i{i} + 1*gamma_tilde_i{i} + 0.01*trace(P_tilde_i{i}) + 0.01*trace(R_tilde_i{i});
 end
 
 for l = 1:numOfLines
@@ -386,6 +385,8 @@ solverOptions = sdpsettings('solver', 'mosek', 'verbose', 2, 'debug', debugMode,
                            'mosek.MSK_DPAR_INTPNT_CO_TOL_REL_GAP', 1e-5, ...
                            'mosek.MSK_DPAR_INTPNT_CO_TOL_PFEAS', 1e-6, ...
                            'mosek.MSK_DPAR_INTPNT_CO_TOL_DFEAS', 1e-6);
+
+
 
 sol = optimize(constraints, costGamma, solverOptions);
 
