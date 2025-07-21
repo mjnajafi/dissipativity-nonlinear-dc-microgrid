@@ -46,8 +46,8 @@ for i = 1:1:numOfDGs
     % CPL parameters for sector boundedness (from paper's Lemma 6)
     PL_i = DG{i}.PL;     % Constant Power Load value
     Cti = DG{i}.C;       % Capacitance
-    Vmin = 0.95 * DG{i}.refVoltage;  % 5% below nominal
-    Vmax = 1.05 * DG{i}.refVoltage;  % 5% above nominal
+    Vmin = 0.98 * DG{i}.refVoltage;  % 5% below nominal
+    Vmax = 1.02 * DG{i}.refVoltage;  % 5% above nominal
    
     
     % Basic positivity constraints
@@ -136,6 +136,10 @@ for i = 1:1:numOfDGs
     
     % SECOND CONSTRAINT from Theorem 4 (S-procedure for CPL sector boundedness)
     % All parts are 6×6 matrices based on your dimension analysis
+    
+    % Calculate sector bounds α_i and β_i
+    alpha_i = PL_i / (Cti * Vmax^2);
+    beta_i = PL_i / (Cti * Vmin^2);
 
     % Ti matrix setup
     Ti = [1; 0; 0];  % 3×1 column vector
@@ -212,7 +216,7 @@ for i = 1:1:numOfDGs
     
     % Add all DG constraints
     % constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con4, con5];
-    constraints = [constraints, con0_1, con0_2, con1, con2, con3];
+    constraints = [constraints, con0_1, con0_2, con1, con2, con3, con4, con5];
 
 end
 
@@ -229,15 +233,15 @@ for l = 1:1:numOfLines
     constraintMats{end+1} = P_bar_l{l};
     
     % Line passivity constraints
-    tagName = ['nu_bar_',num2str(l),'_bound'];
-    constraintTags{end+1} = tagName;
-    con_nu_l = tag(nu_bar_l{l} <= 0, tagName);  % Line passivity constraint
-    constraintMats{end+1} = nu_bar_l{l};
-    
-    tagName = ['rho_bar_',num2str(l),'_positive'];
-    constraintTags{end+1} = tagName;
-    con_rho_l = tag(rho_bar_l{l} >= epsilon, tagName);  % Positive definite
-    constraintMats{end+1} = rho_bar_l{l};
+    % tagName = ['nu_bar_',num2str(l),'_bound'];
+    % constraintTags{end+1} = tagName;
+    % con_nu_l = tag(nu_bar_l{l} <= 0, tagName);  % Line passivity constraint
+    % constraintMats{end+1} = nu_bar_l{l};
+    % 
+    % tagName = ['rho_bar_',num2str(l),'_positive'];
+    % constraintTags{end+1} = tagName;
+    % con_rho_l = tag(rho_bar_l{l} >= epsilon, tagName);  % Positive definite
+    % constraintMats{end+1} = rho_bar_l{l};
     
     % Main line LMI constraint (from Lemma 5)
     W_l = [(2*P_bar_l{l}*Rl)/Ll - rho_bar_l{l}, -P_bar_l{l}/Ll + 1/2;
@@ -248,7 +252,9 @@ for l = 1:1:numOfLines
     con7 = tag(W_l >= epsilon*eye(2), tagName);
     constraintMats{end+1} = W_l;
     
-    constraints = [constraints, con6, con_nu_l, con_rho_l, con7];
+    % constraints = [constraints, con6, con_nu_l, con_rho_l, con7];
+    constraints = [constraints, con6, con7];
+
 end
 
 %% Mixed Constraints from Theorem 4 (equation 107) - Using your corrected structure
@@ -362,18 +368,18 @@ costGamma = 0;
 alpha_lambda = 1;  % Weight for lambda terms
 
 % Minimize λ̃_i terms (primary objective from Theorem 4)
-% for i = 1:numOfDGs
-%     costGamma = costGamma + alpha_lambda * lambda_tilde_i{i};
-% end
+for i = 1:numOfDGs
+    costGamma = costGamma + alpha_lambda * lambda_tilde_i{i};
+end
 
 % Additional regularization terms
 for i = 1:numOfDGs
     costGamma = costGamma + 0.1*rho_tilde_i{i} + 100*gamma_tilde_i{i} + 0.01*trace(P_tilde_i{i}) + 0.01*trace(R_tilde_i{i});
 end
 
-% for l = 1:numOfLines
-%     costGamma = costGamma + 0.1*rho_bar_l{l} + 0.01*trace(P_bar_l{l});
-% end
+for l = 1:numOfLines
+    costGamma = costGamma + 0.1*rho_bar_l{l} + 0.01*trace(P_bar_l{l});
+end
 
 %% Solve the LMI problem
 solverOptions = sdpsettings('solver', 'mosek', 'verbose', 2, 'debug', debugMode, ...
