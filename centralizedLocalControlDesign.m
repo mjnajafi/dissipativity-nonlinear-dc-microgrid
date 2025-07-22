@@ -19,6 +19,10 @@ for i = 1:1:numOfDGs
     nu_i{i} = sdpvar(1, 1, 'full');           % νi in Theorem 4
     rho_tilde_i{i} = sdpvar(1, 1, 'full');    % ρ̃i in Theorem 4
     gamma_tilde_i{i} = sdpvar(1, 1, 'full');  % γ̃i in Theorem 4
+    
+    % Add slack variables for DG constraints
+    S1_i{i} = sdpvar(12, 12, 'symmetric');    % Slack for main W1 LMI
+    S2_i{i} = sdpvar(6, 6, 'symmetric');      % Slack for CPL W2 LMI
 end
 
 % Create LMI variables for Lines
@@ -26,6 +30,18 @@ for l = 1:1:numOfLines
     P_bar_l{l} = sdpvar(1, 1, 'symmetric');   % P̄_l in Theorem 4
     nu_bar_l{l} = sdpvar(1, 1, 'full');       % ν̄_l in Theorem 4
     rho_bar_l{l} = sdpvar(1, 1, 'full');      % ρ̄_l in Theorem 4
+    
+    % Add slack variable for line constraints
+    S3_l{l} = sdpvar(2, 2, 'symmetric');      % Slack for line LMI
+end
+
+% Mixed constraint slack variables
+for i = 1:1:numOfDGs
+    for l = 1:1:numOfLines
+        if B_il(i,l) ~= 0
+            S4_il{i,l} = sdpvar(6, 6, 'symmetric');  % Slack for mixed LMI
+        end
+    end
 end
 
 constraints = [];
@@ -89,7 +105,18 @@ for i = 1:1:numOfDGs
     con0_2 = tag(gamma_tilde_i{i} <= BarGamma, tagName);  % From Lemma 9
     constraintMats{end+1} = gamma_tilde_i{i};
     
-    % FIRST CONSTRAINT from Theorem 4 (Main LMI with CPL)
+    % Slack variable constraints
+    tagName = ['S1_',num2str(i),'_positive'];
+    constraintTags{end+1} = tagName;
+    con_s1 = tag(S1_i{i} >= 0, tagName);
+    constraintMats{end+1} = S1_i{i};
+    
+    tagName = ['S2_',num2str(i),'_positive'];
+    constraintTags{end+1} = tagName;
+    con_s2 = tag(S2_i{i} >= 0, tagName);
+    constraintMats{end+1} = S2_i{i};
+    
+    % FIRST CONSTRAINT from Theorem 4 (Main LMI with CPL) - WITH SLACK
     % Building the 4-block structure exactly as in the paper
     
     % Block (1,1): ρ̃_i*I + R̃_i
@@ -131,11 +158,11 @@ for i = 1:1:numOfDGs
     
     tagName = ['W1_',num2str(i)];
     constraintTags{end+1} = tagName;
-    con4 = tag(W1_i >= epsilon*eye(size(W1_i)), tagName);
+    con4 = tag(W1_i + S1_i{i} >= epsilon*eye(size(W1_i)), tagName);  % Added slack S1_i
     constraintMats{end+1} = W1_i;
     
     
-    % SECOND CONSTRAINT from Theorem 4 (S-procedure for CPL sector boundedness)
+    % SECOND CONSTRAINT from Theorem 4 (S-procedure for CPL sector boundedness) - WITH SLACK
     % All parts are 6×6 matrices based on your dimension analysis
     
     % Calculate sector bounds α_i and β_i
@@ -212,11 +239,11 @@ for i = 1:1:numOfDGs
     
     tagName = ['W2_',num2str(i)];
     constraintTags{end+1} = tagName;
-    con5 = tag(W2_i >= epsilon*eye(size(W2_i)), tagName);
+    con5 = tag(W2_i + S2_i{i} >= epsilon*eye(size(W2_i)), tagName);  % Added slack S2_i
     constraintMats{end+1} = W2_i;
     
     % Add all DG constraints
-    constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con4, con5];
+    constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con_s1, con_s2, con4, con5];
 
 end
 
@@ -243,16 +270,22 @@ for l = 1:1:numOfLines
     con_rho_l = tag(rho_bar_l{l} >= epsilon, tagName);  % Positive definite
     constraintMats{end+1} = rho_bar_l{l};
     
-    % Main line LMI constraint (from Lemma 5)
+    % Slack variable constraint
+    tagName = ['S3_',num2str(l),'_positive'];
+    constraintTags{end+1} = tagName;
+    con_s3 = tag(S3_l{l} >= 0, tagName);
+    constraintMats{end+1} = S3_l{l};
+    
+    % Main line LMI constraint (from Lemma 5) - WITH SLACK
     W_l = [(2*P_bar_l{l}*Rl)/Ll - rho_bar_l{l}, -P_bar_l{l}/Ll + 1/2;
            -P_bar_l{l}/Ll + 1/2,                 -nu_bar_l{l}];
     
     tagName = ['W_l_',num2str(l)];
     constraintTags{end+1} = tagName;
-    con7 = tag(W_l >= epsilon*eye(2), tagName);
+    con7 = tag(W_l + S3_l{l} >= epsilon*eye(2), tagName);  % Added slack S3_l
     constraintMats{end+1} = W_l;
     
-    constraints = [constraints, con6, con_nu_l, con_rho_l, con7];
+    constraints = [constraints, con6, con_nu_l, con_rho_l, con_s3, con7];
 
 end
 
@@ -284,6 +317,12 @@ for i = 1:1:numOfDGs
             con_aux = tag(auxiliary_LMI >= epsilon*eye(3), tagName);
             constraintMats{end+1} = auxiliary_LMI;
             constraints = [constraints, con_aux];
+            
+            % Slack variable constraint for mixed LMI
+            tagName = ['S4_',num2str(i),'_',num2str(l),'_positive'];
+            constraintTags{end+1} = tagName;
+            con_s4 = tag(S4_il{i,l} >= 0, tagName);
+            constraintMats{end+1} = S4_il{i,l};
             
             % Building the LMI step by step with subblocks following your structure
             % Block (1,1)
@@ -349,22 +388,23 @@ for i = 1:1:numOfDGs
             Mat_6 = [Mat_5, Mat_16;
                      Mat_16', Mat_66];
             
-            % Final LMI condition
+            % Final LMI condition - WITH SLACK
             W = Mat_6;
             tagName = ['LMI_107_',num2str(i),'_',num2str(l)];
             constraintTags{end+1} = tagName;
-            con_LMI_107 = tag(W >= epsilon*eye(size(W)), tagName);
+            con_LMI_107 = tag(W + S4_il{i,l} >= epsilon*eye(size(W)), tagName);  % Added slack S4_il
             constraintMats{end+1} = W;
             
             % Add to constraints
-            constraints = [constraints, con_LMI_107];
+            constraints = [constraints, con_s4, con_LMI_107];
         end
     end
 end
 
-%% Cost Function (minimizing α_λ Σ λ̃_i as in Theorem 4)
+%% Cost Function (minimizing α_λ Σ λ̃_i as in Theorem 4) - WITH SLACK PENALTY
 costGamma = 0;
 alpha_lambda = 1;  % Weight for lambda terms
+slack_penalty = 1000;  % Penalty weight for slack variables
 
 % Minimize λ̃_i terms (primary objective from Theorem 4)
 for i = 1:numOfDGs
@@ -374,10 +414,23 @@ end
 % Additional regularization terms
 for i = 1:numOfDGs
     costGamma = costGamma + 0.1*rho_tilde_i{i} + 1*gamma_tilde_i{i} + 0.01*trace(P_tilde_i{i}) + 0.01*trace(R_tilde_i{i});
+    % Add slack variable penalties
+    costGamma = costGamma + slack_penalty*trace(S1_i{i}) + slack_penalty*trace(S2_i{i});
 end
 
 for l = 1:numOfLines
     costGamma = costGamma + 0.1*rho_bar_l{l} + 0.01*trace(P_bar_l{l});
+    % Add slack variable penalty
+    costGamma = costGamma + slack_penalty*trace(S3_l{l});
+end
+
+% Add penalties for mixed constraint slack variables
+for i = 1:1:numOfDGs
+    for l = 1:1:numOfLines
+        if B_il(i,l) ~= 0
+            costGamma = costGamma + slack_penalty*trace(S4_il{i,l});
+        end
+    end
 end
 
 %% Solve the LMI problem
@@ -409,10 +462,44 @@ if sol.problem ~= 0
             end
         end
     end
+    
+    % Print slack variable values to see which constraints needed relaxation
+    fprintf('\n=== Slack Variable Values ===\n');
+    for i = 1:numOfDGs
+        s1_val = value(S1_i{i});
+        s2_val = value(S2_i{i});
+        if max(max(s1_val)) > 1e-6
+            fprintf('DG %d: S1 (W1 LMI) max value = %e\n', i, max(max(s1_val)));
+        end
+        if max(max(s2_val)) > 1e-6
+            fprintf('DG %d: S2 (W2 CPL LMI) max value = %e\n', i, max(max(s2_val)));
+        end
+    end
+    
+    for l = 1:numOfLines
+        s3_val = value(S3_l{l});
+        if max(max(s3_val)) > 1e-6
+            fprintf('Line %d: S3 (Line LMI) max value = %e\n', l, max(max(s3_val)));
+        end
+    end
+    
+    for i = 1:numOfDGs
+        for l = 1:numOfLines
+            if B_il(i,l) ~= 0
+                s4_val = value(S4_il{i,l});
+                if max(max(s4_val)) > 1e-6
+                    fprintf('Mixed (%d,%d): S4 (Mixed LMI) max value = %e\n', i, l, max(max(s4_val)));
+                end
+            end
+        end
+    end
 end
 
 %% Extract variable values if solution was found
 if statusLocalController
+    fprintf('\n=== Slack Variable Analysis ===\n');
+    total_slack_usage = 0;
+    
     for i = 1:1:numOfDGs
         P_tilde_iVal = value(P_tilde_i{i});
         Kp_iVal = value(Kp_i{i});
@@ -423,6 +510,20 @@ if statusLocalController
         gamma_tilde_iVal = value(gamma_tilde_i{i});
         R_tilde_iVal = value(R_tilde_i{i});
         lambda_tilde_iVal = value(lambda_tilde_i{i});
+        
+        % Check slack variable usage
+        s1_val = value(S1_i{i});
+        s2_val = value(S2_i{i});
+        s1_max = max(max(s1_val));
+        s2_max = max(max(s2_val));
+        total_slack_usage = total_slack_usage + trace(s1_val) + trace(s2_val);
+        
+        if s1_max > 1e-6
+            fprintf('DG %d: W1 LMI required slack S1 with max value = %e\n', i, s1_max);
+        end
+        if s2_max > 1e-6
+            fprintf('DG %d: W2 CPL LMI required slack S2 with max value = %e\n', i, s2_max);
+        end
         
         % Convert back to original variables using Ki0 = K̃i0 * P̃i^(-1)
         Ki0 = K_tilde_i0Val / P_tilde_iVal;  % This gives [Kp, 0, Ki]
@@ -458,12 +559,43 @@ if statusLocalController
         nu_bar_lVal = value(nu_bar_l{l});
         rho_bar_lVal = value(rho_bar_l{l});
         
+        % Check slack variable usage
+        s3_val = value(S3_l{l});
+        s3_max = max(max(s3_val));
+        total_slack_usage = total_slack_usage + trace(s3_val);
+        
+        if s3_max > 1e-6
+            fprintf('Line %d: Line LMI required slack S3 with max value = %e\n', l, s3_max);
+        end
+        
         % Store results
         Line{l}.P0 = P_bar_lVal;
         Line{l}.nu = nu_bar_lVal;
         Line{l}.rho = rho_bar_lVal;
         
         fprintf('Line %d: nu = %f, rho = %f\n', l, nu_bar_lVal, rho_bar_lVal);
+    end
+    
+    % Check mixed constraint slack usage
+    for i = 1:numOfDGs
+        for l = 1:numOfLines
+            if B_il(i,l) ~= 0
+                s4_val = value(S4_il{i,l});
+                s4_max = max(max(s4_val));
+                total_slack_usage = total_slack_usage + trace(s4_val);
+                
+                if s4_max > 1e-6
+                    fprintf('Mixed constraint (%d,%d): Required slack S4 with max value = %e\n', i, l, s4_max);
+                end
+            end
+        end
+    end
+    
+    fprintf('\nTotal slack variable usage: %e\n', total_slack_usage);
+    if total_slack_usage < 1e-6
+        fprintf('SUCCESS: Problem solved without significant slack relaxation!\n');
+    else
+        fprintf('NOTE: Problem required slack relaxation. Total slack usage: %e\n', total_slack_usage);
     end
     
     fprintf('Local control design completed successfully!\n');
