@@ -415,7 +415,7 @@ end
 for i = 1:numOfDGs
     costGamma = costGamma + 0.1*rho_tilde_i{i} + 1*gamma_tilde_i{i} + 0.01*trace(P_tilde_i{i}) + 0.01*trace(R_tilde_i{i});
     % Add slack variable penalties
-    costGamma = costGamma +  slack_penalty*trace(S2_i{i});
+    costGamma = costGamma + slack_penalty*trace(S2_i{i});
 end
 
 for l = 1:numOfLines
@@ -525,8 +525,24 @@ if statusLocalController
             fprintf('DG %d: W2 CPL LMI required slack S2 with max value = %e\n', i, s2_max);
         end
         
-        % Convert back to original variables using Ki0 = K̃i0 * P̃i^(-1)
-        Ki0 = K_tilde_i0Val / P_tilde_iVal;  % This gives [Kp, 0, Ki]
+        
+        % % CORRECTED: Convert back to original variables preserving zero structure
+        % Ki0 = K̃i0 * P̃i^(-1), but we need to handle each gain separately
+        P_tilde_inv = inv(P_tilde_iVal);
+
+        % Extract individual gains and convert them properly
+        Kp_converted = Kp_iVal * P_tilde_inv(1,1);  % Only use diagonal element for Kp
+        Ki_converted = Ki_iVal * P_tilde_inv(3,3);  % Only use diagonal element for Ki
+
+        % Construct final Ki0 with enforced zero middle element
+        Ki0 = [Kp_converted, 0, Ki_converted];  % GUARANTEED zero middle element
+
+
+        % % Convert back to original variables using Ki0 = K̃i0 * P̃i^(-1)
+        % Ki0 = K_tilde_i0Val / P_tilde_iVal;  % This gives [Kp, 0, Ki]
+
+   
+
         rho_i = 1 / rho_tilde_iVal;  % Convert rho_tilde back to rho
         
         % Store results

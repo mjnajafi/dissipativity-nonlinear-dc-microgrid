@@ -36,7 +36,7 @@ function [Vr, Is, statusLemma4] = implementLemma4_iterative(DG, Line, B_il, maxI
     end
     
     % Voltage bounds
-    voltage_deviation_percent = 10;  % 10% deviation
+    voltage_deviation_percent = 5;  % 10% deviation
     Vmin = (1 - voltage_deviation_percent/100) * V_nominal;
     Vmax = (1 + voltage_deviation_percent/100) * V_nominal;
     
@@ -84,7 +84,7 @@ function [Vr, Is, statusLemma4] = implementLemma4_iterative(DG, Line, B_il, maxI
         % Objective: minimize deviation from nominal + current sharing coefficient
         alphaV = 1;
         alphaI = 0.1;
-        objective = alphaV * norm(Vr - V_nominal, 2)^2 + alphaI * Is^2;
+        objective = alphaV * norm(Vr - V_nominal, 2)^2 + alphaI * Is;
         
         % Solve
         options = sdpsettings('solver', 'mosek', 'verbose', 0);
