@@ -403,7 +403,7 @@ end
 
 %% Cost Function (minimizing α_λ Σ λ̃_i as in Theorem 4) - WITH SLACK PENALTY
 costGamma = 0;
-alpha_lambda = 1;  % Weight for lambda terms
+alpha_lambda = 100;  % Weight for lambda terms
 slack_penalty = 100000;  % Penalty weight for slack variables
 
 % Minimize λ̃_i terms (primary objective from Theorem 4)
@@ -413,13 +413,13 @@ end
 
 % Additional regularization terms
 for i = 1:numOfDGs
-    costGamma = costGamma + 0.1*rho_tilde_i{i} + 1*gamma_tilde_i{i} + 0.01*trace(P_tilde_i{i}) + 0.01*trace(R_tilde_i{i});
+    costGamma = costGamma + 0.01*rho_tilde_i{i} + 1*gamma_tilde_i{i} + 0.1*trace(P_tilde_i{i}) + 0.1*trace(R_tilde_i{i});
     % Add slack variable penalties
     costGamma = costGamma + slack_penalty*trace(S2_i{i});
 end
 
 for l = 1:numOfLines
-    costGamma = costGamma + 0.1*rho_bar_l{l} + 0.01*trace(P_bar_l{l});
+    costGamma = costGamma + 0.1*rho_bar_l{l} + 0.1*trace(P_bar_l{l});
     % Add slack variable penalty
     % costGamma = costGamma + slack_penalty*trace(S3_l{l});
 end
