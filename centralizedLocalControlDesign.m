@@ -282,10 +282,10 @@ for l = 1:1:numOfLines
     
     tagName = ['W_l_',num2str(l)];
     constraintTags{end+1} = tagName;
-    con7 = tag(W_l + S3_l{l} >= epsilon*eye(2), tagName);  % Added slack S3_l
+    con7 = tag(W_l >= epsilon*eye(2), tagName);  % Added slack S3_l
     constraintMats{end+1} = W_l;
     
-    constraints = [constraints, con6, con_nu_l, con_s3, con_rho_l, con7];
+    constraints = [constraints, con6, con_nu_l, con_rho_l, con7];
 
 end
 
@@ -404,7 +404,7 @@ end
 %% Cost Function (minimizing α_λ Σ λ̃_i as in Theorem 4) - WITH SLACK PENALTY
 costGamma = 0;
 alpha_lambda = 1;  % Weight for lambda terms
-slack_penalty = 1000;  % Penalty weight for slack variables
+slack_penalty = 100000;  % Penalty weight for slack variables
 
 % Minimize λ̃_i terms (primary objective from Theorem 4)
 for i = 1:numOfDGs
@@ -421,7 +421,7 @@ end
 for l = 1:numOfLines
     costGamma = costGamma + 0.1*rho_bar_l{l} + 0.01*trace(P_bar_l{l});
     % Add slack variable penalty
-    costGamma = costGamma + slack_penalty*trace(S3_l{l});
+    % costGamma = costGamma + slack_penalty*trace(S3_l{l});
 end
 
 % Add penalties for mixed constraint slack variables
