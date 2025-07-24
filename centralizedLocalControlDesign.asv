@@ -158,7 +158,7 @@ for i = 1:1:numOfDGs
     
     tagName = ['W1_',num2str(i)];
     constraintTags{end+1} = tagName;
-    con4 = tag(W1_i >= epsilon*eye(size(W1_i)), tagName);  % Added slack S1_i
+    con4 = tag(W1_i + S1_i{i} >= epsilon*eye(size(W1_i)), tagName);  % Added slack S1_i
     constraintMats{end+1} = W1_i;
     
     
@@ -243,7 +243,7 @@ for i = 1:1:numOfDGs
     constraintMats{end+1} = W2_i;
     
     % Add all DG constraints
-    constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con_s2, con4, con5];
+    constraints = [constraints, con0_1, con0_2, con1, con2, con3, con_nu, con_rho, con_s1, con_s2, con4, con5];
 
 end
 
@@ -415,7 +415,7 @@ end
 for i = 1:numOfDGs
     costGamma = costGamma + 0.1*rho_tilde_i{i} + 1*gamma_tilde_i{i} + 0.01*trace(P_tilde_i{i}) + 0.01*trace(R_tilde_i{i});
     % Add slack variable penalties
-    costGamma = costGamma + slack_penalty*trace(S2_i{i});
+    costGamma = costGamma +  slack_penalty*trace(S1_i{i}) + slack_penalty*trace(S2_i{i});
 end
 
 for l = 1:numOfLines
