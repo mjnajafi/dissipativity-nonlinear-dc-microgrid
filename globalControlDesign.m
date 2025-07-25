@@ -408,7 +408,7 @@ con6 = costFun0 >= 0.01;
 constraints = [constraints, con6];
 
 if isSoft
-    alpha = 100;  % When isSoft is 1, emphasize communication cost
+    alpha = 1;  % When isSoft is 1, emphasize communication cost
 else
     alpha = 0;    % When isSoft is 0, exclude communication cost
 end
