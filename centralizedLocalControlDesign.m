@@ -3,7 +3,7 @@ function [DG,Line,statusLocalController] = centralizedLocalControlDesign(DG,Line
 numOfDGs = size(B_il,1);
 numOfLines = size(B_il,2);
 
-epsilon = 0.000001; % Minimum value
+epsilon = 0.00001; % Minimum value
 debugMode = 0; % Enable for debugging
 
 % Create LMI variables for DGs
@@ -403,7 +403,7 @@ end
 
 %% Cost Function (minimizing α_λ Σ λ̃_i as in Theorem 4) - WITH SLACK PENALTY
 costGamma = 0;
-alpha_lambda = 100;  % Weight for lambda terms
+alpha_lambda = 1;  % Weight for lambda terms
 slack_penalty = 100000;  % Penalty weight for slack variables
 
 % Minimize λ̃_i terms (primary objective from Theorem 4)
@@ -413,13 +413,13 @@ end
 
 % Additional regularization terms
 for i = 1:numOfDGs
-    costGamma = costGamma + 0.01*rho_tilde_i{i} + 1*gamma_tilde_i{i} + 0.1*trace(P_tilde_i{i}) + 0.1*trace(R_tilde_i{i});
+    costGamma = costGamma + 1*rho_tilde_i{i} + 0.1*gamma_tilde_i{i} + 100*trace(P_tilde_i{i}) + 10*trace(R_tilde_i{i});
     % Add slack variable penalties
     costGamma = costGamma + slack_penalty*trace(S2_i{i});
 end
 
 for l = 1:numOfLines
-    costGamma = costGamma + 0.1*rho_bar_l{l} + 0.1*trace(P_bar_l{l});
+    costGamma = costGamma + 0.1*rho_bar_l{l} + 10*trace(P_bar_l{l});
     % Add slack variable penalty
     % costGamma = costGamma + slack_penalty*trace(S3_l{l});
 end

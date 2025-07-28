@@ -84,7 +84,7 @@ function [Vr, Is, statusLemma4] = implementLemma4_iterative(DG, Line, B_il, maxI
         % Objective: minimize deviation from nominal + current sharing coefficient
         alphaV = 1;
         alphaI = 0.1;
-        objective = alphaV * norm(Vr - V_nominal, 2)^2 + alphaI * Is;
+        objective = alphaV * norm(Vr - V_nominal, 2)^2 + alphaI * Is^2;
         
         % Solve
         options = sdpsettings('solver', 'mosek', 'verbose', 0);
